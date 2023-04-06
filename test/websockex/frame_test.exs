@@ -18,9 +18,8 @@ defmodule WebSockex.FrameTest do
 
   @binary :erlang.term_to_binary(:hello)
 
-  @otp_vesion System.otp_release() |> Integer.parse() |> elem(0)
-
   alias WebSockex.{Frame}
+  import Bitwise
 
   def unmask(key, payload, acc \\ <<>>)
   def unmask(_, <<>>, acc), do: acc
@@ -619,11 +618,5 @@ defmodule WebSockex.FrameTest do
 
       assert unmask(mask, masked_payload) == payload
     end
-  end
-
-  if @otp_vesion >= 24 do
-    defp xor(a, b), do: Bitwise.bxor(a, b)
-  else
-    defp xor(a, b), do: Bitwise.^^^(a, b)
   end
 end
