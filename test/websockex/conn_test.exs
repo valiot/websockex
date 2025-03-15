@@ -148,16 +148,46 @@ defmodule WebSockex.ConnTest do
       [url: url, uri: uri, conn: conn]
     end
 
-    test "open_socket with supplied cacerts", context do
-      conn =
-        WebSockex.Conn.new(
-          context.uri,
-          insecure: false,
-          cacerts: WebSockex.TestServer.cacerts()
-        )
+    test "open_socket with supplied cacerts" do
+      # First we start the HTTPS server
+      {:ok, {server_ref, url}} = WebSockex.TestServer.start_https(self())
 
-      assert {:ok, %WebSockex.Conn{conn_mod: :ssl, transport: :ssl, insecure: false}} =
-               WebSockex.Conn.open_socket(conn)
+      # Extract the port from the URL
+      uri = URI.parse(url)
+      port = uri.port
+
+      # Then we get the CA certificates
+      cacerts = WebSockex.TestServer.cacerts()
+
+      # Configure the connection with the port extracted from the URL
+      # Important: For secure connections, we must configure the SSL options correctly
+      conn = %WebSockex.Conn{
+        host: "localhost",
+        port: port,
+        path: "/ws",
+        query: "",
+        conn_mod: :ssl,
+        transport: :ssl,
+        cacerts: cacerts,
+        insecure: false,
+        ssl_options: [
+          verify: :verify_peer,
+          cacerts: cacerts,
+          server_name_indication: ~c"localhost"
+        ]
+      }
+
+      # Try to open the connection
+      try do
+        result = WebSockex.Conn.open_socket(conn)
+        assert {:ok, %WebSockex.Conn{conn_mod: :ssl, transport: :ssl, insecure: false}} = result
+        conn = elem(result, 1)
+        assert conn.ssl_options[:verify] == :verify_peer
+        assert conn.ssl_options[:cacerts] == cacerts
+      after
+        # Clean up after the test
+        WebSockex.TestServer.shutdown(server_ref)
+      end
     end
 
     test "open_socket with insecure flag", context do
@@ -177,7 +207,11 @@ defmodule WebSockex.ConnTest do
     end
 
     test "open_socket with custom ssl options", context do
-      ssl_options = [cacertfile: Path.join([__DIR__, "..", "support", "priv", "websockexca.cer"])]
+      ssl_options = [
+        verify: :verify_peer,
+        cacertfile: Path.join([__DIR__, "..", "support", "priv", "websockexca.cer"]),
+        server_name_indication: ~c"localhost"
+      ]
       conn = WebSockex.Conn.new(context.uri, ssl_options: ssl_options)
 
       assert {:ok,

@@ -879,6 +879,7 @@ defmodule WebSockexTest do
       WebSockex.cast(context.pid, {:send, {:ping, "bananas"}})
 
       assert_receive {:caught_payload_pong, "bananas"}
+      assert_receive {:received_payload_ping, "bananas"}
     end
 
     test "handles dead connections when replying", context do

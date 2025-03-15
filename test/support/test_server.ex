@@ -5,8 +5,6 @@ defmodule WebSockex.TestServer do
   @certfile Path.join([__DIR__, "priv", "websockex.cer"])
   @keyfile Path.join([__DIR__, "priv", "websockex.key"])
   @cacert Path.join([__DIR__, "priv", "websockexca.cer"])
-          |> File.read!()
-          |> :public_key.pem_decode()
 
   plug(:match)
   plug(:dispatch)
@@ -35,26 +33,33 @@ defmodule WebSockex.TestServer do
   def start_https(pid) do
     ref = make_ref()
     port = get_port()
-    url = "wss://localhost:#{port}/ws"
     {:ok, agent_pid} = Agent.start_link(fn -> :ok end)
+    url = "wss://localhost:#{port}/ws"
+
+    unless File.exists?(@certfile), do: raise("Certificate file not found: #{@certfile}")
+    unless File.exists?(@keyfile), do: raise("Key file not found: #{@keyfile}")
 
     opts = [
       dispatch: dispatch({pid, agent_pid}),
-      certfile: @certfile,
-      keyfile: @keyfile,
       port: port,
-      ref: ref
+      ref: ref,
+      certfile: @certfile,
+      keyfile: @keyfile
     ]
+
+    Process.put(:https_port, port)
 
     case Plug.Cowboy.https(__MODULE__, [], opts) do
       {:ok, _} ->
         {:ok, {ref, url}}
 
       {:error, :eaddrinuse} ->
-        require Logger
-        Logger.error("Address #{port} in use!")
         start_https(pid)
     end
+  end
+
+  def https_port do
+    Process.get(:https_port) || get_port()
   end
 
   def new_conn_mode(socket_pid, mode) do
@@ -81,8 +86,12 @@ defmodule WebSockex.TestServer do
   end
 
   def cacerts do
-    [{:Certificate, cert, _}] = @cacert
-    [cert]
+    unless File.exists?(@cacert), do: raise("CA certificate file not found: #{@cacert}")
+
+    {:ok, cert} = File.read(@cacert)
+
+    :public_key.pem_decode(cert)
+    |> Enum.map(fn {_, der, _} -> der end)
   end
 
   defp dispatch(tuple) do
@@ -165,6 +174,11 @@ defmodule WebSockex.TestSocket do
 
   def websocket_handle(:ping, state),
     do: {:ok, state}
+
+  def websocket_handle({:ping, payload}, state) do
+    send(state.pid, {:received_payload_ping, payload})
+    {:ok, state}
+  end
 
   def websocket_handle(:pong, state) do
     send(state.pid, :received_pong)
